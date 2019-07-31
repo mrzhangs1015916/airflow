@@ -810,7 +810,8 @@ class BackfillJobTest(unittest.TestCase):
         dag.clear()
 
         task0_id = 'test_run_dependent_task'
-        args0 = ['run',
+        args0 = ['tasks',
+                 'run',
                  '-A',
                  dag_id,
                  task0_id,
@@ -824,7 +825,8 @@ class BackfillJobTest(unittest.TestCase):
         self.assertEqual(ti_dependent0.state, State.FAILED)
 
         task1_id = 'test_run_dependency_task'
-        args1 = ['run',
+        args1 = ['tasks',
+                 'run',
                  '-A',
                  dag_id,
                  task1_id,
@@ -838,7 +840,8 @@ class BackfillJobTest(unittest.TestCase):
         self.assertEqual(ti_dependency.state, State.FAILED)
 
         task2_id = 'test_run_dependent_task'
-        args2 = ['run',
+        args2 = ['tasks',
+                 'run',
                  '-A',
                  dag_id,
                  task2_id,
@@ -895,6 +898,7 @@ class BackfillJobTest(unittest.TestCase):
         dag_id = 'example_bash_operator'
         run_date = DEFAULT_DATE
         args = [
+            'dags',
             'backfill',
             dag_id,
             '-s',
@@ -1210,14 +1214,13 @@ class BackfillJobTest(unittest.TestCase):
         dag.clear()
 
     def test_subdag_clear_parentdag_downstream_clear(self):
-        dag = self.dagbag.get_dag('example_subdag_operator')
-        subdag_op_task = dag.get_task('section-1')
+        dag = self.dagbag.get_dag('clear_subdag_test_dag')
+        subdag_op_task = dag.get_task('daily_job')
 
         subdag = subdag_op_task.subdag
-        subdag.schedule_interval = '@daily'
 
         executor = TestExecutor()
-        job = BackfillJob(dag=subdag,
+        job = BackfillJob(dag=dag,
                           start_date=DEFAULT_DATE,
                           end_date=DEFAULT_DATE,
                           executor=executor,
@@ -1226,14 +1229,26 @@ class BackfillJobTest(unittest.TestCase):
         with timeout(seconds=30):
             job.run()
 
-        ti0 = TI(
-            task=subdag.get_task('section-1-task-1'),
+        ti_subdag = TI(
+            task=dag.get_task('daily_job'),
             execution_date=DEFAULT_DATE)
-        ti0.refresh_from_db()
-        self.assertEqual(ti0.state, State.SUCCESS)
+        ti_subdag.refresh_from_db()
+        self.assertEqual(ti_subdag.state, State.SUCCESS)
+
+        ti_irrelevant = TI(
+            task=dag.get_task('daily_job_irrelevant'),
+            execution_date=DEFAULT_DATE)
+        ti_irrelevant.refresh_from_db()
+        self.assertEqual(ti_irrelevant.state, State.SUCCESS)
+
+        ti_downstream = TI(
+            task=dag.get_task('daily_job_downstream'),
+            execution_date=DEFAULT_DATE)
+        ti_downstream.refresh_from_db()
+        self.assertEqual(ti_downstream.state, State.SUCCESS)
 
         sdag = subdag.sub_dag(
-            task_regex='section-1-task-1',
+            task_regex='daily_job_subdag_task',
             include_downstream=True,
             include_upstream=False)
 
@@ -1242,22 +1257,14 @@ class BackfillJobTest(unittest.TestCase):
             end_date=DEFAULT_DATE,
             include_parentdag=True)
 
-        ti0.refresh_from_db()
-        self.assertEqual(State.NONE, ti0.state)
+        ti_subdag.refresh_from_db()
+        self.assertEqual(State.NONE, ti_subdag.state)
 
-        ti1 = TI(
-            task=dag.get_task('some-other-task'),
-            execution_date=DEFAULT_DATE)
-        self.assertEqual(State.NONE, ti1.state)
+        ti_irrelevant.refresh_from_db()
+        self.assertEqual(State.SUCCESS, ti_irrelevant.state)
 
-        # Checks that all the Downstream tasks for Parent DAG
-        # have been cleared
-        for task in subdag_op_task.downstream_list:
-            ti = TI(
-                task=dag.get_task(task.task_id),
-                execution_date=DEFAULT_DATE
-            )
-            self.assertEqual(State.NONE, ti.state)
+        ti_downstream.refresh_from_db()
+        self.assertEqual(State.NONE, ti_downstream.state)
 
         subdag.clear()
         dag.clear()

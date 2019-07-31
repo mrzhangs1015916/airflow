@@ -189,7 +189,7 @@ class TaskInstance(Base, LoggingMixin):
         self.hostname = ''
         self.executor_config = task.executor_config
         self.init_on_load()
-        # Is this TaskInstance being currently running within `airflow run --raw`.
+        # Is this TaskInstance being currently running within `airflow tasks run --raw`.
         # Not persisted to the database so only valid for the current process
         self.raw = False
 
@@ -350,7 +350,7 @@ class TaskInstance(Base, LoggingMixin):
         :return: shell command that can be used to run the task instance
         """
         iso = execution_date.isoformat()
-        cmd = ["airflow", "run", str(dag_id), str(task_id), str(iso)]
+        cmd = ["airflow", "tasks", "run", str(dag_id), str(task_id), str(iso)]
         cmd.extend(["--mark_success"]) if mark_success else None
         cmd.extend(["--pickle", str(pickle_id)]) if pickle_id else None
         cmd.extend(["--job_id", str(job_id)]) if job_id else None
@@ -1145,12 +1145,14 @@ class TaskInstance(Base, LoggingMixin):
         if next_execution_date:
             next_ds = next_execution_date.strftime('%Y-%m-%d')
             next_ds_nodash = next_ds.replace('-', '')
+            next_execution_date = pendulum.instance(next_execution_date)
 
         prev_ds = None
         prev_ds_nodash = None
         if prev_execution_date:
             prev_ds = prev_execution_date.strftime('%Y-%m-%d')
             prev_ds_nodash = prev_ds.replace('-', '')
+            prev_execution_date = pendulum.instance(prev_execution_date)
 
         ds_nodash = ds.replace('-', '')
         ts_nodash = self.execution_date.strftime('%Y%m%dT%H%M%S')
@@ -1198,46 +1200,45 @@ class TaskInstance(Base, LoggingMixin):
                 return str(self.var)
 
         return {
+            'conf': configuration,
             'dag': task.dag,
+            'dag_run': dag_run,
             'ds': ds,
+            'ds_nodash': ds_nodash,
+            'end_date': ds,
+            'execution_date': pendulum.instance(self.execution_date),
+            'inlets': task.inlets,
+            'latest_date': ds,
+            'macros': macros,
             'next_ds': next_ds,
             'next_ds_nodash': next_ds_nodash,
+            'next_execution_date': next_execution_date,
+            'outlets': task.outlets,
+            'params': params,
             'prev_ds': prev_ds,
             'prev_ds_nodash': prev_ds_nodash,
-            'ds_nodash': ds_nodash,
-            'ts': ts,
-            'ts_nodash': ts_nodash,
-            'ts_nodash_with_tz': ts_nodash_with_tz,
-            'yesterday_ds': yesterday_ds,
-            'yesterday_ds_nodash': yesterday_ds_nodash,
-            'tomorrow_ds': tomorrow_ds,
-            'tomorrow_ds_nodash': tomorrow_ds_nodash,
-            'END_DATE': ds,
-            'end_date': ds,
-            'dag_run': dag_run,
-            'run_id': run_id,
-            'execution_date': self.execution_date,
             'prev_execution_date': prev_execution_date,
             'prev_execution_date_success': lazy_object_proxy.Proxy(
                 lambda: self.previous_execution_date_success),
             'prev_start_date_success': lazy_object_proxy.Proxy(lambda: self.previous_start_date_success),
-            'next_execution_date': next_execution_date,
-            'latest_date': ds,
-            'macros': macros,
-            'params': params,
+            'run_id': run_id,
             'tables': tables,
             'task': task,
             'task_instance': self,
-            'ti': self,
             'task_instance_key_str': ti_key_str,
-            'conf': configuration,
             'test_mode': self.test_mode,
+            'ti': self,
+            'tomorrow_ds': tomorrow_ds,
+            'tomorrow_ds_nodash': tomorrow_ds_nodash,
+            'ts': ts,
+            'ts_nodash': ts_nodash,
+            'ts_nodash_with_tz': ts_nodash_with_tz,
             'var': {
+                'json': VariableJsonAccessor(),
                 'value': VariableAccessor(),
-                'json': VariableJsonAccessor()
             },
-            'inlets': task.inlets,
-            'outlets': task.outlets,
+            'yesterday_ds': yesterday_ds,
+            'yesterday_ds_nodash': yesterday_ds_nodash,
         }
 
     def overwrite_params_with_dag_run_conf(self, params, dag_run):
